@@ -13,7 +13,35 @@ const steamCache = new NodeCache({ stdTTL: 60 }); // 1min for Steam prices
 
 // --- Middleware ---
 app.use(cors({ origin: "http://localhost:5173" }));
-app.use(express.json());
+app.use(express.json({ limit: "10kb" }));
+
+// --- Input sanitization helper ---
+function sanitizeString(str, maxLen = 200) {
+  if (typeof str !== "string") return "";
+  // Strip control characters, limit length
+  return str.replace(/[\x00-\x1F\x7F]/g, "").slice(0, maxLen);
+}
+
+// --- Simple in-memory rate limiter (per IP, per route) ---
+const rateLimitMap = new Map();
+function rateLimit(req, res, maxReq = 20, windowMs = 60000) {
+  const ip = req.ip || req.connection.remoteAddress || "unknown";
+  const key = `${ip}:${req.path}`;
+  const now = Date.now();
+  const entry = rateLimitMap.get(key) || { count: 0, start: now };
+  if (now - entry.start > windowMs) {
+    entry.count = 1;
+    entry.start = now;
+  } else {
+    entry.count++;
+  }
+  rateLimitMap.set(key, entry);
+  if (entry.count > maxReq) {
+    res.status(429).json({ error: "Too many requests, please slow down." });
+    return false;
+  }
+  return true;
+}
 
 // --- Axios instance with timeout ---
 const http = axios.create({ timeout: 8000 });
@@ -101,8 +129,9 @@ function buffUrl(marketHashName) {
  * Search skins by name (case-insensitive, partial match).
  */
 app.get("/api/items/search", async (req, res) => {
+  if (!rateLimit(req, res, 30, 60000)) return;
   try {
-    const raw = (req.query.q || "").trim().toLowerCase();
+    const raw = sanitizeString(req.query.q || "").trim().toLowerCase();
     if (!raw || raw.length < 2) {
       return res.json([]);
     }
@@ -138,6 +167,7 @@ app.get("/api/items/search", async (req, res) => {
  * Return top 20 Skinport items by min_price (descending), enriched with skin DB data.
  */
 app.get("/api/items/popular", async (req, res) => {
+  if (!rateLimit(req, res, 10, 60000)) return;
   try {
     const [skinportItems, skinsDb] = await Promise.all([
       getSkinportItems(),
@@ -190,8 +220,9 @@ app.get("/api/items/popular", async (req, res) => {
  * Fetch prices from Steam, Skinport, CSFloat, Buff163 in parallel.
  */
 app.get("/api/prices", async (req, res) => {
+  if (!rateLimit(req, res, 20, 60000)) return;
   try {
-    const name = (req.query.name || "").trim();
+    const name = sanitizeString(req.query.name || "").trim();
     if (!name) {
       return res.status(400).json({ error: "name parameter is required" });
     }

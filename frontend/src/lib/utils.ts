@@ -15,7 +15,3 @@ export function formatPrice(price: number | null, currency = "EUR"): string {
   }).format(price);
 }
 
-export function getRarityTextClass(color: string): string {
-  // Map rarity hex colors to tailwind-compatible inline styles
-  return color || "#aaaaaa";
-}

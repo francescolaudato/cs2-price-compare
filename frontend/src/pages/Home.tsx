@@ -5,16 +5,13 @@ import {
   Crosshair,
   Zap,
   Globe,
-  ChevronRight,
   AlertCircle,
 } from "lucide-react";
 import SearchBar from "../components/SearchBar";
 import { SkinCard, PopularSkinCard, SkinCardSkeleton } from "../components/SkinCard";
 import PriceTable from "../components/PriceTable";
-import { Button } from "../components/ui/button";
 import type { Skin, PopularItem } from "../types";
 import { getPopularItems, searchItems } from "../lib/api";
-import { useQuery as useSearchQuery } from "@tanstack/react-query";
 
 // --- Hero section ---
 function Hero({ onExampleClick }: { onExampleClick: (name: string) => void }) {
@@ -98,7 +95,7 @@ export default function Home() {
   const {
     data: searchResults = [],
     isLoading: searchLoading,
-  } = useSearchQuery<Skin[]>({
+  } = useQuery<Skin[]>({
     queryKey: ["search", triggeredSearch],
     queryFn: () => searchItems(triggeredSearch),
     enabled: triggeredSearch.trim().length >= 2,
@@ -226,7 +223,7 @@ export default function Home() {
 
           {!searchLoading && searchResults.length > 0 && (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {searchResults.map((skin) => (
+              {searchResults.map((skin: Skin) => (
                 <SkinCard
                   key={skin.id}
                   skin={skin}
