@@ -40,11 +40,11 @@ const MARKET_META: Record<
     bg: "rgba(232,93,38,0.08)",
     border: "rgba(232,93,38,0.2)",
   },
-  csfloat: {
-    label: "CSFloat",
-    color: "#3b82f6",
-    bg: "rgba(59,130,246,0.08)",
-    border: "rgba(59,130,246,0.2)",
+  waxpeer: {
+    label: "Waxpeer",
+    color: "#22c55e",
+    bg: "rgba(34,197,94,0.08)",
+    border: "rgba(34,197,94,0.2)",
   },
   dmarket: {
     label: "DMarket",
@@ -102,9 +102,7 @@ function PriceRow({
         {!price.available && (
           <span className="flex items-center gap-1 text-[11px] text-zinc-500">
             <AlertCircle className="h-3 w-3" />
-            {(price as MarketPrice & { reason?: string }).reason === "no_api_key"
-              ? "API key required"
-              : "Unavailable"}
+            Unavailable
           </span>
         )}
       </div>

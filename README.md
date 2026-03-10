@@ -1,6 +1,6 @@
 # CS2 Skin Price Comparison
 
-A real-time CS2 skin price comparison app that fetches prices from Steam, Skinport, CSFloat, and Buff163.
+A real-time CS2 skin price comparison app that fetches prices from Steam, Skinport, Waxpeer, and DMarket.
 
 ## Tech Stack
 
@@ -62,7 +62,7 @@ Then open **http://localhost:5173** in your browser.
 - **Popular skins** grid from Skinport's live inventory
 - **Wear selector** (FN / MW / FT / WW / BS) per skin
 - **StatTrak toggle** where available
-- **Price comparison** across Steam, Skinport, CSFloat, and Buff163
+- **Price comparison** across Steam, Skinport, Waxpeer, and DMarket
 - **Cheapest market** highlighted in green with savings calculation
 - **Direct buy links** to each marketplace
 - Dark CS2-inspired theme with amber accents
@@ -77,9 +77,8 @@ Then open **http://localhost:5173** in your browser.
 
 ## Notes
 
-- **Buff163** may be geo-restricted outside China — the app gracefully shows it as unavailable
-- **CSFloat** prices are in USD and converted to EUR at ~0.92 rate
-- **Buff163** prices are in CNY and converted to EUR at ~0.13 rate
+- **Waxpeer** prices are in USD and converted to EUR at ~0.92 rate
+- **DMarket** prices are in USD and converted to EUR at ~0.92 rate
 - For production, use a real exchange rate API instead of hardcoded conversion rates
 - Steam rate-limits its Market API aggressively — the 60s cache helps mitigate this
 

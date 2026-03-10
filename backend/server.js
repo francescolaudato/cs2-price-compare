@@ -9,6 +9,7 @@ const PORT = 3001;
 // --- Caches ---
 const skinsCache = new NodeCache({ stdTTL: 86400 }); // 24h for item DB
 const skinportCache = new NodeCache({ stdTTL: 3600 }); // 1h for Skinport
+const waxpeerCache = new NodeCache({ stdTTL: 3600 }); // 1h for Waxpeer
 const steamCache = new NodeCache({ stdTTL: 60 }); // 1min for Steam prices
 
 // --- Middleware ---
@@ -81,6 +82,23 @@ async function getSkinportItems() {
 }
 
 /**
+ * Fetch and cache Waxpeer price list.
+ * Returns array of { name, min, steam_price, count }
+ * Prices are in 1/1000 USD (divide by 1000 to get USD).
+ */
+async function getWaxpeerItems() {
+  const cached = waxpeerCache.get("waxpeer");
+  if (cached) return cached;
+
+  console.log("[Cache] Fetching Waxpeer items...");
+  const { data } = await http.get("https://api.waxpeer.com/v1/prices?game=csgo");
+  const items = Array.isArray(data.items) ? data.items : Object.values(data.items || {});
+  waxpeerCache.set("waxpeer", items);
+  console.log(`[Cache] Stored ${items.length} Waxpeer items.`);
+  return items;
+}
+
+/**
  * Parse Steam price string like "€19,50" or "$19.50" into a float.
  */
 function parseSteamPrice(priceStr) {
@@ -104,13 +122,6 @@ function steamUrl(marketHashName) {
 function skinportUrl(marketHashName) {
   // Skinport uses hyphens and lowercased slugs, but the direct search link works too
   return `https://skinport.com/market?search=${encodeURIComponent(marketHashName)}`;
-}
-
-/**
- * Build the CSFloat URL for a skin.
- */
-function csfloatUrl(marketHashName) {
-  return `https://csfloat.com/db?market_hash_name=${encodeURIComponent(marketHashName)}`;
 }
 
 /**
@@ -217,7 +228,7 @@ app.get("/api/items/popular", async (req, res) => {
 
 /**
  * GET /api/prices?name=MARKET_HASH_NAME
- * Fetch prices from Steam, Skinport, CSFloat, Buff163 in parallel.
+ * Fetch prices from Steam, Skinport, Waxpeer, DMarket in parallel.
  */
 app.get("/api/prices", async (req, res) => {
   if (!rateLimit(req, res, 20, 60000)) return;
@@ -301,42 +312,20 @@ app.get("/api/prices", async (req, res) => {
       }
     })();
 
-    // --- CSFloat (requires CSFLOAT_API_KEY env variable) ---
-    const csfloatPromise = (async () => {
-      const apiKey = process.env.CSFLOAT_API_KEY;
-      if (!apiKey) {
-        return {
-          market: "CSFloat",
-          price: null,
-          currency: "EUR",
-          url: csfloatUrl(name),
-          available: false,
-          logo: "csfloat",
-          reason: "no_api_key",
-        };
-      }
+    // --- Waxpeer (public API, no auth required) ---
+    const waxpeerPromise = (async () => {
       try {
-        const { data } = await http.get(
-          `https://csfloat.com/api/v1/listings?market_hash_name=${encodeURIComponent(name)}&sort_by=lowest_price&limit=3`,
-          { headers: { Authorization: apiKey } }
-        );
-        const listings = data?.data || data;
-        if (Array.isArray(listings) && listings.length > 0) {
-          const priceUSD = listings[0].price / 100;
-          const priceEUR = Math.round(priceUSD * 0.92 * 100) / 100;
-          return {
-            market: "CSFloat",
-            price: priceEUR,
-            currency: "EUR",
-            url: csfloatUrl(name),
-            available: true,
-            logo: "csfloat",
-          };
+        const items = await getWaxpeerItems();
+        const item = items.find((i) => i.name?.toLowerCase() === name.toLowerCase());
+        if (item && item.min > 0) {
+          // min is in 1/1000 USD → divide by 1000 to get USD, then convert to EUR
+          const priceEUR = Math.round((item.min / 1000) * 0.92 * 100) / 100;
+          return { market: "Waxpeer", price: priceEUR, currency: "EUR", url: `https://waxpeer.com/csgo?search=${encodeURIComponent(name)}`, available: true, logo: "waxpeer" };
         }
-        return { market: "CSFloat", price: null, currency: "EUR", url: csfloatUrl(name), available: false, logo: "csfloat" };
+        return { market: "Waxpeer", price: null, currency: "EUR", url: `https://waxpeer.com/csgo`, available: false, logo: "waxpeer" };
       } catch (e) {
-        console.warn("[CSFloat] Error:", e.message);
-        return { market: "CSFloat", price: null, currency: "EUR", url: csfloatUrl(name), available: false, logo: "csfloat" };
+        console.warn("[Waxpeer] Error:", e.message);
+        return { market: "Waxpeer", price: null, currency: "EUR", url: `https://waxpeer.com/csgo`, available: false, logo: "waxpeer" };
       }
     })();
 
@@ -344,21 +333,15 @@ app.get("/api/prices", async (req, res) => {
     const dmarketPromise = (async () => {
       try {
         const { data } = await http.get(
-          `https://api.dmarket.com/exchange/v1/market/items?gameId=a8db&title=${encodeURIComponent(name)}&currency=EUR&limit=5&orderBy=price&orderDir=asc`
+          `https://api.dmarket.com/exchange/v1/market/items?gameId=a8db&title=${encodeURIComponent(name)}&currency=USD&limit=3&orderBy=price&orderDir=asc`
         );
         const items = data?.objects || [];
         if (items.length > 0) {
-          // DMarket price is in cents (EUR)
-          const priceEUR = Math.round((items[0].price?.EUR || items[0].extra?.suggestedPrice?.EUR || 0) / 100 * 100) / 100;
-          if (priceEUR > 0) {
-            return {
-              market: "DMarket",
-              price: priceEUR,
-              currency: "EUR",
-              url: dmarketUrl(name),
-              available: true,
-              logo: "dmarket",
-            };
+          // price.USD is in USD cents
+          const priceUSD = parseInt(items[0].price?.USD || "0", 10) / 100;
+          if (priceUSD > 0) {
+            const priceEUR = Math.round(priceUSD * 0.92 * 100) / 100;
+            return { market: "DMarket", price: priceEUR, currency: "EUR", url: dmarketUrl(name), available: true, logo: "dmarket" };
           }
         }
         return { market: "DMarket", price: null, currency: "EUR", url: dmarketUrl(name), available: false, logo: "dmarket" };
@@ -369,14 +352,14 @@ app.get("/api/prices", async (req, res) => {
     })();
 
     // Wait for all in parallel
-    const [steam, skinport, csfloat, dmarket] = await Promise.all([
+    const [steam, skinport, waxpeer, dmarket] = await Promise.all([
       steamPromise,
       skinportPromise,
-      csfloatPromise,
+      waxpeerPromise,
       dmarketPromise,
     ]);
 
-    const prices = [steam, skinport, csfloat, dmarket];
+    const prices = [steam, skinport, waxpeer, dmarket];
 
     // Find cheapest available
     const available = prices.filter((p) => p.available && p.price !== null);
@@ -403,4 +386,5 @@ app.listen(PORT, () => {
   // Pre-warm caches
   getSkinsDatabase().catch((e) => console.error("Pre-warm skins failed:", e.message));
   getSkinportItems().catch((e) => console.error("Pre-warm skinport failed:", e.message));
+  getWaxpeerItems().catch((e) => console.error("Pre-warm waxpeer failed:", e.message));
 });

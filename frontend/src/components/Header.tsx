@@ -47,7 +47,7 @@ export default function Header() {
           {/* Markets badge */}
           <div className="hidden md:flex items-center gap-2">
             <span className="text-xs text-zinc-600">Comparing</span>
-            {["Steam", "Skinport", "CSFloat", "Buff163"].map((m) => (
+            {["Steam", "Skinport", "Waxpeer", "DMarket"].map((m) => (
               <span
                 key={m}
                 className="text-xs px-2 py-0.5 bg-zinc-900 border border-zinc-800 rounded-full text-zinc-400"
