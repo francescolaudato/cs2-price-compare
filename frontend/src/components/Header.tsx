@@ -1,4 +1,4 @@
-import { Crosshair, Github, TrendingUp } from "lucide-react";
+import { Crosshair, Github } from "lucide-react";
 import { Link } from "react-router-dom";
 
 export default function Header() {
@@ -26,15 +26,8 @@ export default function Header() {
 
           {/* Nav */}
           <nav className="hidden sm:flex items-center gap-6">
-            <Link
-              to="/"
-              className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-100 transition-colors"
-            >
-              <TrendingUp className="h-4 w-4" />
-              Market
-            </Link>
             <a
-              href="https://github.com"
+              href="https://github.com/francescolaudato/cs2-price-compare"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-100 transition-colors"
