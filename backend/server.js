@@ -114,10 +114,10 @@ function csfloatUrl(marketHashName) {
 }
 
 /**
- * Build the Buff163 URL for a skin.
+ * Build the DMarket URL for a skin.
  */
-function buffUrl(marketHashName) {
-  return `https://buff.163.com/market/csgo#tab=selling&game=csgo&search=${encodeURIComponent(marketHashName)}`;
+function dmarketUrl(marketHashName) {
+  return `https://dmarket.com/ingame-items/item-list/csgo-skins?title=${encodeURIComponent(marketHashName)}`;
 }
 
 // =====================
@@ -136,22 +136,22 @@ app.get("/api/items/search", async (req, res) => {
       return res.json([]);
     }
 
-    // Normalize: strip special chars so "ak47" matches "AK-47", "awp dlore" matches "AWP | Dragon Lore"
-    const normalize = (s) => s.toLowerCase().replace(/[\|\-_\s]+/g, " ").replace(/[^a-z0-9 ]/g, "").trim();
-    const q = normalize(raw);
+    // Normalize: strip special chars so "ak47" matches "AK-47", "ak searing" matches "AK-47 | Searing Rage"
+    const normalize = (s) =>
+      s.toLowerCase().replace(/[\|\-_\s]+/g, " ").replace(/[^a-z0-9 ]/g, "").trim();
+
+    // Split query into individual tokens — ALL must be present (order-independent)
+    const tokens = normalize(raw).split(" ").filter(Boolean);
 
     const skins = await getSkinsDatabase();
 
     const results = skins
       .filter((skin) => {
-        const fullName = normalize(skin.name || "");
-        const weaponName = normalize(skin.weapon?.name || "");
-        const patternName = normalize(skin.pattern?.name || "");
-        return (
-          fullName.includes(q) ||
-          weaponName.includes(q) ||
-          patternName.includes(q)
+        // Build one combined searchable string per skin
+        const haystack = normalize(
+          [skin.name, skin.weapon?.name, skin.pattern?.name].filter(Boolean).join(" ")
         );
+        return tokens.every((token) => haystack.includes(token));
       })
       .slice(0, 30);
 
@@ -301,17 +301,28 @@ app.get("/api/prices", async (req, res) => {
       }
     })();
 
-    // --- CSFloat ---
+    // --- CSFloat (requires CSFLOAT_API_KEY env variable) ---
     const csfloatPromise = (async () => {
+      const apiKey = process.env.CSFLOAT_API_KEY;
+      if (!apiKey) {
+        return {
+          market: "CSFloat",
+          price: null,
+          currency: "EUR",
+          url: csfloatUrl(name),
+          available: false,
+          logo: "csfloat",
+          reason: "no_api_key",
+        };
+      }
       try {
         const { data } = await http.get(
-          `https://csfloat.com/api/v1/listings?market_hash_name=${encodeURIComponent(name)}&sort_by=lowest_price&limit=3`
+          `https://csfloat.com/api/v1/listings?market_hash_name=${encodeURIComponent(name)}&sort_by=lowest_price&limit=3`,
+          { headers: { Authorization: apiKey } }
         );
         const listings = data?.data || data;
         if (Array.isArray(listings) && listings.length > 0) {
-          // Price is in cents (USD), convert: CSFloat uses USD cents
           const priceUSD = listings[0].price / 100;
-          // Approximate USD → EUR (rough, real app would use exchange rate API)
           const priceEUR = Math.round(priceUSD * 0.92 * 100) / 100;
           return {
             market: "CSFloat",
@@ -322,91 +333,50 @@ app.get("/api/prices", async (req, res) => {
             logo: "csfloat",
           };
         }
-        return {
-          market: "CSFloat",
-          price: null,
-          currency: "EUR",
-          url: csfloatUrl(name),
-          available: false,
-          logo: "csfloat",
-        };
+        return { market: "CSFloat", price: null, currency: "EUR", url: csfloatUrl(name), available: false, logo: "csfloat" };
       } catch (e) {
         console.warn("[CSFloat] Error:", e.message);
-        return {
-          market: "CSFloat",
-          price: null,
-          currency: "EUR",
-          url: csfloatUrl(name),
-          available: false,
-          logo: "csfloat",
-        };
+        return { market: "CSFloat", price: null, currency: "EUR", url: csfloatUrl(name), available: false, logo: "csfloat" };
       }
     })();
 
-    // --- Buff163 ---
-    const buffPromise = (async () => {
+    // --- DMarket (public API, no auth required) ---
+    const dmarketPromise = (async () => {
       try {
         const { data } = await http.get(
-          `https://buff.163.com/api/market/goods?game=csgo&search=${encodeURIComponent(name)}&page_num=1&page_size=5`,
-          {
-            headers: {
-              "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            },
-            timeout: 6000,
+          `https://api.dmarket.com/exchange/v1/market/items?gameId=a8db&title=${encodeURIComponent(name)}&currency=EUR&limit=5&orderBy=price&orderDir=asc`
+        );
+        const items = data?.objects || [];
+        if (items.length > 0) {
+          // DMarket price is in cents (EUR)
+          const priceEUR = Math.round((items[0].price?.EUR || items[0].extra?.suggestedPrice?.EUR || 0) / 100 * 100) / 100;
+          if (priceEUR > 0) {
+            return {
+              market: "DMarket",
+              price: priceEUR,
+              currency: "EUR",
+              url: dmarketUrl(name),
+              available: true,
+              logo: "dmarket",
+            };
           }
-        );
-        const items = data?.data?.items || [];
-        const match = items.find(
-          (i) =>
-            i.market_hash_name &&
-            i.market_hash_name.toLowerCase() === name.toLowerCase()
-        );
-        if (match && match.sell_min_price) {
-          // Buff prices are in CNY
-          const priceCNY = parseFloat(match.sell_min_price);
-          // Approximate CNY → EUR
-          const priceEUR = Math.round(priceCNY * 0.13 * 100) / 100;
-          return {
-            market: "Buff163",
-            price: priceEUR,
-            currency: "EUR",
-            url: buffUrl(name),
-            available: true,
-            logo: "buff",
-          };
         }
-        return {
-          market: "Buff163",
-          price: null,
-          currency: "EUR",
-          url: buffUrl(name),
-          available: false,
-          logo: "buff",
-        };
+        return { market: "DMarket", price: null, currency: "EUR", url: dmarketUrl(name), available: false, logo: "dmarket" };
       } catch (e) {
-        // Graceful fallback — Buff is often geo-restricted
-        console.warn("[Buff163] Unavailable (geo-restricted or error):", e.message);
-        return {
-          market: "Buff163",
-          price: null,
-          currency: "EUR",
-          url: buffUrl(name),
-          available: false,
-          logo: "buff",
-        };
+        console.warn("[DMarket] Error:", e.message);
+        return { market: "DMarket", price: null, currency: "EUR", url: dmarketUrl(name), available: false, logo: "dmarket" };
       }
     })();
 
     // Wait for all in parallel
-    const [steam, skinport, csfloat, buff] = await Promise.all([
+    const [steam, skinport, csfloat, dmarket] = await Promise.all([
       steamPromise,
       skinportPromise,
       csfloatPromise,
-      buffPromise,
+      dmarketPromise,
     ]);
 
-    const prices = [steam, skinport, csfloat, buff];
+    const prices = [steam, skinport, csfloat, dmarket];
 
     // Find cheapest available
     const available = prices.filter((p) => p.available && p.price !== null);

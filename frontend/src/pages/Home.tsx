@@ -27,7 +27,7 @@ function Hero({ onExampleClick }: { onExampleClick: (name: string) => void }) {
         <span className="price-shine">Price Compare</span>
       </h1>
       <p className="text-base sm:text-lg text-zinc-400 max-w-xl mx-auto">
-        Find the cheapest CS2 skins across Steam, Skinport, CSFloat, and Buff163 instantly.
+        Find the cheapest CS2 skins across Steam, Skinport, CSFloat, and DMarket instantly.
       </p>
       <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
         <span className="text-xs text-zinc-600">Try:</span>
@@ -51,7 +51,7 @@ function MarketsBar() {
     { name: "Steam", color: "#66c0f4", desc: "Official market" },
     { name: "Skinport", color: "#e85d26", desc: "No-trade skins" },
     { name: "CSFloat", color: "#3b82f6", desc: "P2P listings" },
-    { name: "Buff163", color: "#f59e0b", desc: "CN marketplace" },
+    { name: "DMarket", color: "#9b59b6", desc: "P2P marketplace" },
   ];
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-10">
