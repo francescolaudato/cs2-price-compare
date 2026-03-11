@@ -7,6 +7,9 @@ import {
   RefreshCw,
   Zap,
   Shield,
+  ArrowUpDown,
+  BarChart2,
+  List,
 } from "lucide-react";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -23,7 +26,6 @@ import { WEAR_MAP, WEAR_ORDER } from "../types";
 import { getPrices } from "../lib/api";
 import { formatPrice } from "../lib/utils";
 
-// --- Market logo components (SVG-free text badges) ---
 const MARKET_META: Record<
   string,
   { label: string; color: string; bg: string; border: string }
@@ -87,10 +89,9 @@ function PriceRow({
       className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
         isCheapest
           ? "border-emerald-500/30 bg-emerald-500/5"
-          : "border-zinc-800 bg-zinc-900/50 hover:border-zinc-700"
+          : "border-border bg-secondary/30 hover:border-border/80"
       }`}
     >
-      {/* Market info */}
       <div className="flex items-center gap-3">
         <MarketBadge logo={price.logo} />
         {isCheapest && (
@@ -100,22 +101,21 @@ function PriceRow({
           </span>
         )}
         {!price.available && (
-          <span className="flex items-center gap-1 text-[11px] text-zinc-500">
+          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
             <AlertCircle className="h-3 w-3" />
             Unavailable
           </span>
         )}
       </div>
 
-      {/* Price + CTA */}
       <div className="flex items-center gap-3">
         <span
           className={`text-lg font-bold ${
             isCheapest
               ? "text-emerald-400"
               : price.available
-              ? "text-zinc-100"
-              : "text-zinc-600"
+              ? "text-foreground"
+              : "text-muted-foreground"
           }`}
         >
           {price.available && price.price !== null
@@ -144,7 +144,78 @@ function PriceRow({
   );
 }
 
-// --- Loading skeleton for price table ---
+// --- SVG bar chart ---
+function PriceBarChart({ prices }: { prices: MarketPrice[] }) {
+  const available = prices.filter((p) => p.available && p.price !== null);
+  if (available.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">
+        No price data to chart.
+      </div>
+    );
+  }
+
+  const maxPrice = Math.max(...available.map((p) => p.price!));
+  const chartH = 130;
+  const barW = 56;
+  const gap = 24;
+  const paddingLeft = 8;
+  const totalW = available.length * (barW + gap) - gap + paddingLeft * 2;
+
+  return (
+    <svg
+      viewBox={`0 0 ${totalW} ${chartH + 52}`}
+      className="w-full max-w-sm mx-auto"
+      aria-label="Price comparison chart"
+    >
+      {available.map((p, i) => {
+        const meta = MARKET_META[p.logo];
+        const color = meta?.color || "#aaa";
+        const barH = Math.max(4, (p.price! / maxPrice) * chartH);
+        const x = paddingLeft + i * (barW + gap);
+        const y = chartH - barH;
+
+        return (
+          <g key={p.market}>
+            {/* Bar */}
+            <rect
+              x={x}
+              y={y}
+              width={barW}
+              height={barH}
+              fill={color}
+              fillOpacity={0.75}
+              rx={5}
+            />
+            {/* Price label above bar */}
+            <text
+              x={x + barW / 2}
+              y={y - 6}
+              textAnchor="middle"
+              fill={color}
+              fontSize={11}
+              fontWeight="600"
+            >
+              €{p.price!.toFixed(2)}
+            </text>
+            {/* Market name below */}
+            <text
+              x={x + barW / 2}
+              y={chartH + 18}
+              textAnchor="middle"
+              fill="currentColor"
+              fontSize={11}
+              className="fill-muted-foreground"
+            >
+              {meta?.label || p.market}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 function PriceTableSkeleton() {
   return (
     <div className="space-y-2 mt-4">
@@ -155,7 +226,6 @@ function PriceTableSkeleton() {
   );
 }
 
-// --- Wear tabs ---
 function WearTabs({
   wears,
   selected,
@@ -165,7 +235,6 @@ function WearTabs({
   selected: string;
   onChange: (id: string) => void;
 }) {
-  // Sort by WEAR_ORDER
   const sorted = [...wears].sort(
     (a, b) => WEAR_ORDER.indexOf(a.id) - WEAR_ORDER.indexOf(b.id)
   );
@@ -182,13 +251,13 @@ function WearTabs({
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
               isSelected
                 ? "bg-amber-500 text-zinc-950 border-amber-500 shadow-lg shadow-amber-500/20"
-                : "bg-zinc-900 text-zinc-400 border-zinc-700 hover:border-zinc-500 hover:text-zinc-200"
+                : "bg-secondary text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground"
             }`}
           >
             {meta?.short || wear.name}
             <span
               className={`ml-1 hidden sm:inline text-[10px] font-normal ${
-                isSelected ? "text-zinc-800" : "text-zinc-500"
+                isSelected ? "text-zinc-800" : "text-muted-foreground"
               }`}
             >
               {meta?.full || wear.name}
@@ -200,7 +269,6 @@ function WearTabs({
   );
 }
 
-// --- Main PriceTable Dialog ---
 interface PriceTableProps {
   skin: Skin | null;
   open: boolean;
@@ -211,33 +279,27 @@ export default function PriceTable({ skin, open, onClose }: PriceTableProps) {
   const [selectedWear, setSelectedWear] = useState<string>("");
   const [stattrak, setStattrak] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [sortDir, setSortDir] = useState<"asc" | "desc" | "default">("default");
+  const [activeTab, setActiveTab] = useState<"list" | "chart">("list");
 
-  // Default wear when skin changes
   const getDefaultWear = (s: Skin) => {
     if (!s.wears || s.wears.length === 0) return "";
     const sorted = [...s.wears].sort(
       (a, b) => WEAR_ORDER.indexOf(a.id) - WEAR_ORDER.indexOf(b.id)
     );
-    // Default to Field-Tested if available, otherwise first
     const ft = sorted.find((w) => w.id === "field_tested");
     return ft ? ft.id : sorted[0].id;
   };
 
-  // Build market hash name
   const buildMarketHashName = (): string => {
     if (!skin) return "";
     const wearLabel =
       skin.wears && selectedWear
         ? skin.wears.find((w) => w.id === selectedWear)?.name || ""
         : "";
-
     let name = skin.name;
-    if (stattrak) {
-      name = `StatTrak™ ${name}`;
-    }
-    if (wearLabel) {
-      name = `${name} (${wearLabel})`;
-    }
+    if (stattrak) name = `StatTrak™ ${name}`;
+    if (wearLabel) name = `${name} (${wearLabel})`;
     return name;
   };
 
@@ -252,23 +314,21 @@ export default function PriceTable({ skin, open, onClose }: PriceTableProps) {
     queryKey: ["prices", marketHashName],
     queryFn: () => getPrices(marketHashName),
     enabled: open && !!marketHashName && marketHashName.length > 0,
-    staleTime: 1000 * 60, // 1 min
+    staleTime: 1000 * 60,
     retry: 1,
   });
 
-  // Reset state when skin changes
   const handleOpenChange = (isOpen: boolean) => {
-    if (!isOpen) {
-      onClose();
-    }
+    if (!isOpen) onClose();
   };
 
-  // Set default wear when skin loads
   const handleSkinChange = (s: Skin | null) => {
     if (s) {
       setSelectedWear(getDefaultWear(s));
       setStattrak(false);
       setImgError(false);
+      setSortDir("default");
+      setActiveTab("list");
     }
   };
 
@@ -286,6 +346,17 @@ export default function PriceTable({ skin, open, onClose }: PriceTableProps) {
         Math.min(...availablePrices.map((p) => p.price!))
       : null;
 
+  // Sorted prices for list view
+  const displayedPrices = (() => {
+    if (!priceData) return [];
+    if (sortDir === "default") return priceData.prices;
+    return [...priceData.prices].sort((a, b) => {
+      const pa = a.available && a.price !== null ? a.price : sortDir === "asc" ? Infinity : -Infinity;
+      const pb = b.available && b.price !== null ? b.price : sortDir === "asc" ? Infinity : -Infinity;
+      return sortDir === "asc" ? pa - pb : pb - pa;
+    });
+  })();
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-2xl">
@@ -296,7 +367,6 @@ export default function PriceTable({ skin, open, onClose }: PriceTableProps) {
         <div className="space-y-5">
           {/* Skin header */}
           <div className="flex gap-4">
-            {/* Image */}
             <div className="relative flex-shrink-0 h-28 w-44 rounded-xl bg-gradient-to-br from-zinc-800 to-zinc-900 border border-zinc-700 flex items-center justify-center overflow-hidden">
               {skin.image && !imgError ? (
                 <img
@@ -316,10 +386,9 @@ export default function PriceTable({ skin, open, onClose }: PriceTableProps) {
               )}
             </div>
 
-            {/* Info */}
             <div className="flex-1 min-w-0 space-y-2">
               <div className="flex flex-wrap items-start gap-2">
-                <h2 className="text-xl font-bold text-zinc-100 leading-tight">
+                <h2 className="text-xl font-bold leading-tight">
                   {stattrak && (
                     <span className="text-orange-400 mr-1">StatTrak™</span>
                   )}
@@ -349,16 +418,15 @@ export default function PriceTable({ skin, open, onClose }: PriceTableProps) {
               </div>
 
               {skin.description && (
-                <p className="text-xs text-zinc-500 line-clamp-2 leading-relaxed">
+                <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
                   {skin.description}
                 </p>
               )}
 
-              {/* Float range */}
               {skin.min_float !== undefined && skin.max_float !== undefined && (
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-muted-foreground">
                   Float:{" "}
-                  <span className="text-zinc-300">
+                  <span className="text-foreground">
                     {skin.min_float.toFixed(2)} – {skin.max_float.toFixed(2)}
                   </span>
                 </p>
@@ -370,10 +438,9 @@ export default function PriceTable({ skin, open, onClose }: PriceTableProps) {
 
           {/* Controls */}
           <div className="space-y-3">
-            {/* Wear selector */}
             {skin.wears && skin.wears.length > 0 && (
               <div className="space-y-2">
-                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Wear
                 </label>
                 <WearTabs
@@ -384,16 +451,15 @@ export default function PriceTable({ skin, open, onClose }: PriceTableProps) {
               </div>
             )}
 
-            {/* StatTrak toggle */}
             {skin.stattrak && (
               <div className="flex items-center gap-3">
-                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   StatTrak™
                 </label>
                 <button
                   onClick={() => setStattrak((v) => !v)}
                   className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                    stattrak ? "bg-orange-500" : "bg-zinc-700"
+                    stattrak ? "bg-orange-500" : "bg-secondary border border-border"
                   }`}
                 >
                   <span
@@ -411,13 +477,12 @@ export default function PriceTable({ skin, open, onClose }: PriceTableProps) {
             )}
           </div>
 
-          {/* Market hash name pill */}
           {marketHashName && (
-            <div className="flex items-center gap-2 p-2 rounded-lg bg-zinc-900 border border-zinc-800">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium flex-shrink-0">
+            <div className="flex items-center gap-2 p-2 rounded-lg bg-secondary border border-border">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium flex-shrink-0">
                 Searching
               </span>
-              <span className="text-xs text-zinc-300 font-mono truncate">
+              <span className="text-xs text-foreground font-mono truncate">
                 {marketHashName}
               </span>
             </div>
@@ -425,21 +490,61 @@ export default function PriceTable({ skin, open, onClose }: PriceTableProps) {
 
           <Separator />
 
-          {/* Price comparison */}
+          {/* Price comparison header with tabs + sort */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wider">
-                Price Comparison
-              </h3>
+              <div className="flex items-center gap-1 bg-secondary rounded-lg p-0.5">
+                <button
+                  onClick={() => setActiveTab("list")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    activeTab === "list"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <List className="h-3.5 w-3.5" />
+                  Prices
+                </button>
+                <button
+                  onClick={() => setActiveTab("chart")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    activeTab === "chart"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <BarChart2 className="h-3.5 w-3.5" />
+                  Chart
+                </button>
+              </div>
+
               <div className="flex items-center gap-2">
                 {savings !== null && savings > 0 && (
                   <span className="text-xs text-emerald-400 font-medium">
                     Save up to {formatPrice(savings, "EUR")}
                   </span>
                 )}
+                {activeTab === "list" && (
+                  <button
+                    onClick={() =>
+                      setSortDir((d) =>
+                        d === "default" ? "asc" : d === "asc" ? "desc" : "default"
+                      )
+                    }
+                    className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md border transition-colors ${
+                      sortDir !== "default"
+                        ? "border-amber-500/40 text-amber-400 bg-amber-500/5"
+                        : "border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                    title="Sort by price"
+                  >
+                    <ArrowUpDown className="h-3 w-3" />
+                    {sortDir === "asc" ? "Price ↑" : sortDir === "desc" ? "Price ↓" : "Sort"}
+                  </button>
+                )}
                 <button
                   onClick={() => refetch()}
-                  className="text-zinc-500 hover:text-zinc-300 transition-colors"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
                   title="Refresh prices"
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
@@ -463,43 +568,50 @@ export default function PriceTable({ skin, open, onClose }: PriceTableProps) {
             )}
 
             {priceData && !isLoading && (
-              <div className="space-y-2">
-                {priceData.prices.map((price) => (
-                  <PriceRow
-                    key={price.market}
-                    price={price}
-                    isCheapest={priceData.cheapest === price.market}
-                  />
-                ))}
+              <>
+                {activeTab === "list" && (
+                  <div className="space-y-2">
+                    {displayedPrices.map((price) => (
+                      <PriceRow
+                        key={price.market}
+                        price={price}
+                        isCheapest={priceData.cheapest === price.market}
+                      />
+                    ))}
 
-                {availablePrices.length === 0 && (
-                  <div className="text-center py-6 text-zinc-500 text-sm">
-                    No price data available for this skin/wear combination.
+                    {availablePrices.length === 0 && (
+                      <div className="text-center py-6 text-muted-foreground text-sm">
+                        No price data available for this skin/wear combination.
+                      </div>
+                    )}
+
+                    {availablePrices.length > 0 && priceData.cheapest && (
+                      <div className="mt-4 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+                        <p className="text-xs text-emerald-400 font-medium flex items-center gap-1.5">
+                          <TrendingDown className="h-3.5 w-3.5" />
+                          Best deal on{" "}
+                          <span className="font-bold">{priceData.cheapest}</span>
+                          {savings !== null && savings > 0 && (
+                            <span className="ml-1">
+                              — saves you {formatPrice(savings, "EUR")} vs most expensive
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* Summary */}
-                {availablePrices.length > 0 && priceData.cheapest && (
-                  <div className="mt-4 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
-                    <p className="text-xs text-emerald-400 font-medium flex items-center gap-1.5">
-                      <TrendingDown className="h-3.5 w-3.5" />
-                      Best deal on{" "}
-                      <span className="font-bold">{priceData.cheapest}</span>
-                      {savings !== null && savings > 0 && (
-                        <span className="ml-1">
-                          — saves you {formatPrice(savings, "EUR")} vs most
-                          expensive
-                        </span>
-                      )}
-                    </p>
+                {activeTab === "chart" && (
+                  <div className="py-4">
+                    <PriceBarChart prices={priceData.prices} />
                   </div>
                 )}
-              </div>
+              </>
             )}
           </div>
 
-          {/* Disclaimer */}
-          <p className="text-[10px] text-zinc-600 text-center">
+          <p className="text-[10px] text-muted-foreground text-center">
             Prices are approximate and may vary. EUR conversion is estimated.
             Always verify before purchasing.
           </p>

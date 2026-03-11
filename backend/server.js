@@ -193,31 +193,31 @@ app.get("/api/items/popular", async (req, res) => {
       }
     }
 
-    // Sort Skinport items by min_price desc (expensive = popular/notable)
-    const sorted = [...skinportItems]
-      .filter((item) => item.min_price && item.min_price > 5)
+    // Enrich all items first so we can filter by image availability
+    const allEnriched = [...skinportItems]
+      .filter((item) => item.min_price && item.min_price > 5 && item.quantity > 0)
+      .map((item) => {
+        const baseName = item.market_hash_name
+          ? item.market_hash_name.replace(
+              /\s*\((Factory New|Minimal Wear|Field-Tested|Well-Worn|Battle-Scarred)\)$/,
+              ""
+            )
+          : "";
+        const skinData = skinMap[baseName.toLowerCase()] || null;
+        return {
+          market_hash_name: item.market_hash_name,
+          min_price: item.min_price,
+          currency: "EUR",
+          quantity: item.quantity,
+          skinData,
+        };
+      });
+
+    // Sort by price desc (most expensive first), keep only items with an image
+    const enriched = allEnriched
+      .filter((item) => item.skinData?.image)
       .sort((a, b) => (b.min_price || 0) - (a.min_price || 0))
-      .slice(0, 20);
-
-    // Enrich with skin DB data for image/rarity
-    const enriched = sorted.map((item) => {
-      // Try to find the base skin (strip wear suffix)
-      const baseName = item.market_hash_name
-        ? item.market_hash_name.replace(
-            /\s*\((Factory New|Minimal Wear|Field-Tested|Well-Worn|Battle-Scarred)\)$/,
-            ""
-          )
-        : "";
-      const skinData = skinMap[baseName.toLowerCase()] || null;
-
-      return {
-        market_hash_name: item.market_hash_name,
-        min_price: item.min_price,
-        currency: "EUR",
-        quantity: item.quantity,
-        skinData,
-      };
-    });
+      .slice(0, 60);
 
     res.json(enriched);
   } catch (err) {

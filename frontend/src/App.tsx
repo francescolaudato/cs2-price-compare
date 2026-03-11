@@ -4,7 +4,7 @@ import Home from "./pages/Home";
 
 export default function App() {
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
+    <div className="min-h-screen bg-background text-foreground flex flex-col transition-colors duration-200">
       <Header />
       <main className="flex-1">
         <Routes>
